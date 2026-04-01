@@ -11,15 +11,50 @@ Dim RootPath
 Dim wellReportPath
 Dim FieldMap, TableArea
 Dim strBHName
+Dim outMap, ok
+Dim xlApp, wb, ws
+Dim objFSO, obWCAD, obBHDOC, obHeader
 
-
-
-
-'Definition of the root directory for templates (script folder)
-'RootPath = folder containing this script
 RootPath = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 
+ok = FindBHFilesInGPX(objFSO, RootPath, wellReportPath)
+If Not ok Then
+    WScript.Quit
+End If
+
+Set xlApp = CreateObject("Excel.Application")
+xlApp.Visible = False
+xlApp.DisplayAlerts = False
+Set wb = xlApp.Workbooks.Open(wellReportPath)
+Set ws = wb.Worksheets("Cover Sheet")
+ws.Unprotect "magoo"
+
+'Definition of the root directory for templates (script folder)
+'RootPath = folder containing this script
+'RootPath = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
+'Set objFSO = CreateObject("Scripting.FileSystemObject")
+
+
+'========= test ================
+
+
+
+ok = ProcessWellReport(wb, "Cover Sheet", outMap)
+
+If ok Then
+    MsgBox outMap("WELL")
+    MsgBox outMap("DATE")
+    MsgBox outMap("LT")
+    MsgBox outMap("LB#1")
+End If
+
+'========= test end ================
+
+wb.Close False
+xlApp.Quit
+Set wb = Nothing
+Set xlApp = Nothing  
 
 '==========================
 '|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -30,7 +65,7 @@ Set objFSO = CreateObject("Scripting.FileSystemObject")
 ' Hard-coded lookup maps
 ' be careful to modify
 '====================================================
-Sub HardCodedDicts(FieldMap, TableArea):
+Sub HardCodedDicts(ByRef FieldMap, ByRef TableArea):
     set FieldMap = CreateObject("Scripting.Dictionary")
     FieldMap.CompareMode = 1   ' TextCompare
     
@@ -80,19 +115,16 @@ Sub HardCodedDicts(FieldMap, TableArea):
 End Sub
 
 
-Function FindBHFilesInGPX(fso, rootFolder, ByRef wellReportPath, ByRef )
-    Dim gpxFolderPath
+Function FindBHFilesInGPX(fso, rootFolder, ByRef wellReportPath)
 
     wellReportPath = ""
 
-    gpxFolderPath = rootFolder
-
-    If Not fso.FolderExists(gpxFolderPath) Then
-        MsgBox "GPX folder not found:" & vbCrLf & gpxFolderPath
+    If Not fso.FolderExists(rootFolder) Then
+        MsgBox "GPX folder not found:" & vbCrLf & rootFolder
         FindBHFilesInGPX = False
         Exit Function
     End If
-    Call SearchGPXFolderRecursive(fso, fso.GetFolder(gpxFolderPath), wellReportPath)
+    Call SearchGPXFolderRecursive(fso, fso.GetFolder(rootFolder), wellReportPath)
 
     If wellReportPath = "" Then
         MsgBox "Missing WellReport file in current folder."
@@ -100,11 +132,10 @@ Function FindBHFilesInGPX(fso, rootFolder, ByRef wellReportPath, ByRef )
         Exit Function
     End If
 
-
     FindBHFilesInGPX = True
 End Function
 
-Sub SearchGPXFolderRecursive(fso, folderObj, ByRef wellReportPath, ByRef)
+Sub SearchGPXFolderRecursive(fso, folderObj, ByRef wellReportPath)
     Dim fileObj, subFolder
     Dim fileNameUpper, extNameUpper
 
@@ -121,21 +152,20 @@ Sub SearchGPXFolderRecursive(fso, folderObj, ByRef wellReportPath, ByRef)
             End If
         End If
 
-        If wellReportPath <> ""  Then Exit Sub
+        If wellReportPath <> "" Then Exit Sub
     Next
 
     For Each subFolder In folderObj.SubFolders
-        Call SearchGPXFolderRecursive(fso, subFolder, wellReportPath)
-        If wellReportPath <> ""  Then Exit Sub
+        SearchGPXFolderRecursive fso, subFolder, wellReportPath
+        If wellReportPath <> "" Then Exit Sub
     Next
 End Sub
 
-Function FindLatestTVRecord(ws, tableArea, byRef, tvInfo)
+Function FindLatestTVRecord(ws, tableArea, byRef tvInfo)
     Dim rngType, rngDate, rngOp, rngUnit, rngTop, rngBot
     Dim startRow, endRow, r
     Dim typeCol, dateCol, opCol, unitCol, LTPCol, LBTCol
-    Dim bestRow, bestDate
-    Dim curType, curDate
+    Dim curType
     Dim foundLatest, foundOBI, foundABI
 
     Set tvInfo = CreateObject("Scripting.Dictionary")
@@ -150,7 +180,7 @@ Function FindLatestTVRecord(ws, tableArea, byRef, tvInfo)
     Set rngOp   = ws.Range(tableArea("LeadOperator"))
     Set rngUnit = ws.Range(tableArea("LoggingUnit"))
     Set rngTop = ws.Range(tableArea("LT"))
-    Set rngTBot = ws.Range(tableArea("BT"))
+    Set rngBot = ws.Range(tableArea("LB"))
 
     startRow = rngType.Row
     endRow = rngType.Row + rngType.Rows.Count - 1
@@ -201,13 +231,6 @@ Function FindLatestTVRecord(ws, tableArea, byRef, tvInfo)
     FindLatestTVRecord = foundLatest
 End Function
 
-Function NormalizeLookupKey(s)
-    Dim t
-    t = UCase(Trim(CStr(s)))
-    t = Replace(t, " ", "")
-    NormalizeLookupKey = t
-End Function
-
 Function CloneDict(src)
     Dim d, k
     Set d = CreateObject("Scripting.Dictionary")
@@ -220,9 +243,9 @@ Function CloneDict(src)
 End Function
 
 
-Function ProcessWellReport(wb, coverSheetName, byRef)
+Function ProcessWellReport(wb, coverSheetName, byRef fieldMapOut)
     Dim wsCover
-    Dim fieldMapRaw, fieldMapOut, tableArea
+    Dim fieldMapRaw, tableArea
     Dim k, v
     Dim tvInfo, ok
 
@@ -230,7 +253,7 @@ Function ProcessWellReport(wb, coverSheetName, byRef)
     Set wsCover = wb.Worksheets(coverSheetName)
     
     Set fieldMapOut = CloneDict(fieldMapRaw)
-        ' 1) replace cell address with actual value from Cover Sheet
+    ' 1) replace cell address with actual value from Cover Sheet
     For Each k In fieldMapRaw.Keys
         v = Trim(CStr(fieldMapRaw(k)))
 
@@ -251,20 +274,22 @@ Function ProcessWellReport(wb, coverSheetName, byRef)
         ProcessWellReport = False
         Exit Function
     End If
-
+    ' bit size conversion
     If fieldMapOut("BSU")= "in" Then 
         fieldMapOut("BS") = CStr(CLng(CDbl(fieldMapOut("BS")) * 25.4))
     ElseIf fieldMapOut("BSU")= "cm" Then
         fieldMapOut("BS") = CStr(CLng(CDbl(fieldMapOut("BS")) * 10))
     End if
-
+    ' latest shared info
     fieldMapOut("RECB") = tvInfo("LEADOPERATOR")
     fieldMapOut("LOGU") = tvInfo("LOGGINGUNIT")
     fieldMapOut("DATE") = tvInfo("DATE_TEXT")
-    fieldMapOut("LT") = tvInfo("OBI_LT")
-    fieldMapOut("LB") = tvInfo("OBI_LB")
-    fieldMapOut("LB#1") = tvInfo("ABI_LT")
-    fieldMapOut("LB#2") = tvInfo("ABI_LB")
+    ' OBI-specific
+    If tvInfo.Exists("OBI_LT") Then fieldMapOut("LT") = tvInfo("OBI_LT")
+    If tvInfo.Exists("OBI_LB") Then fieldMapOut("LB") = tvInfo("OBI_LB")
+    ' ABI-specific
+    If tvInfo.Exists("ABI_LT") Then fieldMapOut("LB#1") = tvInfo("ABI_LT")
+    If tvInfo.Exists("ABI_LB") Then fieldMapOut("LB#2") = tvInfo("ABI_LB")
 
     ProcessWellReport = True
 End Function    
