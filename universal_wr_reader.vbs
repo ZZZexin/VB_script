@@ -1,4 +1,4 @@
-' Created by Zexin Yu 13/3/2026
+' Created by Zexin Yu 31/3/2026
 ' design for reading well report and fill relevant field in WSG template.
 ' That to be filled file should be open in WELLCAD windown
 ' this script should be with well report
@@ -11,7 +11,7 @@ Dim RootPath
 Dim wellReportPath
 Dim FieldMap, TableArea
 Dim strBHName
-Dim outMap, ok
+Dim finalMap, ok
 Dim xlApp, wb, ws
 Dim objFSO, obWCAD, obBHDOC, obHeader
 
@@ -34,20 +34,34 @@ ws.Unprotect "magoo"
 'RootPath = folder containing this script
 'RootPath = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
 'Set objFSO = CreateObject("Scripting.FileSystemObject")
+Set obWCAD = CreateObject("WellCAD.Application")
+obWCAD.Showwindow()
+Set obBHDoc = obWCAD.GetBorehole()
+
+ok = ProcessWellReport(wb, "Cover Sheet", finalMap)
+If Not ok Then
+    WScript.Quit
+End If
+
+Set obHeader = obBHDoc.Header
+
+For Each key In finalMap.Keys
+    obHeader.ItemText key, CStr(finalMap(key))
+Next
 
 
 '========= test ================
 
 
 
-ok = ProcessWellReport(wb, "Cover Sheet", outMap)
+'ok = ProcessWellReport(wb, "Cover Sheet", outMap)
 
-If ok Then
-    MsgBox outMap("WELL")
-    MsgBox outMap("DATE")
-    MsgBox outMap("LT")
-    MsgBox outMap("LB#1")
-End If
+'If ok Then
+'    MsgBox outMap("WELL")
+'    MsgBox outMap("DATE")
+'    MsgBox outMap("LT")
+'    MsgBox outMap("LB#1")
+'End If
 
 '========= test end ================
 
@@ -65,13 +79,13 @@ Set xlApp = Nothing
 ' Hard-coded lookup maps
 ' be careful to modify
 '====================================================
-Sub HardCodedDicts(ByRef FieldMap, ByRef TableArea):
+Sub HardCodedDicts(ByRef FieldMap, ByRef TableArea)
     set FieldMap = CreateObject("Scripting.Dictionary")
     FieldMap.CompareMode = 1   ' TextCompare
     
         ' ----- Single cell fields -----
     FieldMap.Add ":", "LATER"
-    FieldMap.Add "#1", "LATER"
+    FieldMap.Add ":#1", "LATER"
     FieldMap.Add "COMP", "D4"
     FieldMap.Add "WELL", "D11"
     FieldMap.Add "LOC",  "D14"
@@ -92,7 +106,7 @@ Sub HardCodedDicts(ByRef FieldMap, ByRef TableArea):
     FieldMap.Add "EAST", "L16"
     FieldMap.Add "NRTH", "L17"
     FieldMap.Add "EGL",  "-"
-    FieldMap.Add "MAGN", "LATER"
+    FieldMap.Add "MAGN", "J11"
     FieldMap.Add "RIGN", "-"
     FieldMap.Add "BS",   "D20"
     FieldMap.Add "BSU",  "E20"
@@ -242,6 +256,21 @@ Function CloneDict(src)
     Set CloneDict = d
 End Function
 
+Sub CopyDictValueOrDash(srcDict, srcKey, dstDict, dstKey)
+    Dim v
+
+    If srcDict.Exists(srcKey) Then
+        v = Trim(CStr(srcDict(srcKey)))
+        If v <> "" And UCase(v) <> "LATER" Then
+            dstDict(dstKey) = srcDict(srcKey)
+        Else
+            dstDict(dstKey) = "-"
+        End If
+    Else
+        dstDict(dstKey) = "-"
+    End If
+End Sub
+
 
 Function ProcessWellReport(wb, coverSheetName, byRef fieldMapOut)
     Dim wsCover
@@ -284,12 +313,122 @@ Function ProcessWellReport(wb, coverSheetName, byRef fieldMapOut)
     fieldMapOut("RECB") = tvInfo("LEADOPERATOR")
     fieldMapOut("LOGU") = tvInfo("LOGGINGUNIT")
     fieldMapOut("DATE") = tvInfo("DATE_TEXT")
+    fieldMapOut(":") =  "OPTICAL AND ACOUSTIC? IMAGE LOG"
+    fieldMapOut(":#1") = "ORIENTED TO ?"
     ' OBI-specific
-    If tvInfo.Exists("OBI_LT") Then fieldMapOut("LT") = tvInfo("OBI_LT")
-    If tvInfo.Exists("OBI_LB") Then fieldMapOut("LB") = tvInfo("OBI_LB")
+    fieldMapOut("LT") = DictValueOrDefault(tvInfo, "OBI_LT", "-")
+    fieldMapOut("LB") = DictValueOrDefault(tvInfo, "OBI_LB", "-")
     ' ABI-specific
-    If tvInfo.Exists("ABI_LT") Then fieldMapOut("LB#1") = tvInfo("ABI_LT")
-    If tvInfo.Exists("ABI_LB") Then fieldMapOut("LB#2") = tvInfo("ABI_LB")
+    fieldMapOut("LB#1") = DictValueOrDefault(tvInfo, "ABI_LT", "-")
+    fieldMapOut("LB#2") = DictValueOrDefault(tvInfo, "ABI_LB", "-")
+
+    
 
     ProcessWellReport = True
+
+
 End Function    
+
+
+' ask mag dev, save once and fixed for the batch
+Function NormalizeLookupKey(s)
+    Dim t
+    t = UCase(Trim(CStr(s)))
+    t = Replace(t, " ", "")
+    NormalizeLookupKey = t
+End Function
+
+' caching the mag dev somewhere in the computer
+Function LoadMagDevCache(cachePath)
+    Dim fso, d, ts, line, parts, k, v
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set d = CreateObject("Scripting.Dictionary")
+    d.CompareMode = 1
+
+    If fso.FileExists(cachePath) Then
+        Set ts = fso.OpenTextFile(cachePath, 1, False)
+        Do Until ts.AtEndOfStream
+            line = Trim(ts.ReadLine)
+            If line <> "" Then
+                parts = Split(line, vbTab)
+                If UBound(parts) >= 1 Then
+                    k = Trim(parts(0))
+                    v = Trim(parts(1))
+                    If k <> "" Then d(k) = v
+                End If
+            End If
+        Loop
+        ts.Close
+    End If
+
+    Set LoadMagDevCache = d
+End Function
+
+' write magdev caching
+Sub SaveMagDevCache(cachePath, d)
+    Dim fso, ts, k
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(cachePath, 2, True)
+
+    For Each k In d.Keys
+        ts.WriteLine k & vbTab & d(k)
+    Next
+
+    ts.Close
+End Sub
+
+' pop up window
+Function AskMagDev(defaultMagDev, locName)
+    Dim s, msg, title
+
+    title = "Confirm Magnetic Declination"
+    msg = "Please confirm or edit the magnetic declination." & vbCrLf & vbCrLf & _
+          "Location: " & locName & vbCrLf & vbCrLf & _
+          "MAGN value:"
+
+    Do
+        s = InputBox(msg, title, CStr(defaultMagDev))
+
+        If Trim(CStr(s)) = "" Then
+            AskMagDev = ""
+            Exit Function
+        End If
+
+        If IsNumeric(s) Then
+            AskMagDev = CStr(CDbl(s))
+            Exit Function
+        Else
+            MsgBox "Please enter a valid number.", vbExclamation, "Invalid input"
+        End If
+    Loop
+End Function
+
+
+Function GetMagDevWithConfirmation(reportMagDev, cachePath)
+    Dim d, key, defaultMagDev, confirmedValue
+
+    Set d = LoadMagDevCache(cachePath)
+
+    ' priority set to user input
+    If d.Exists(key) Then
+        defaultMagDev = d(key)
+    Else
+        defaultMagDev = reportMagDev
+    End If
+
+    ' confirm with popup window
+    confirmedValue = AskMagDev(defaultMagDev, wellName, locName)
+
+    If confirmedValue = "" Then
+        GetMagDevWithConfirmation = ""
+        Exit Function
+    End If
+
+    ' caching mag dev
+    d(key) = confirmedValue
+    SaveMagDevCache cachePath, d
+
+    GetMagDevWithConfirmation = confirmedValue
+End Function
