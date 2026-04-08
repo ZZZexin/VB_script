@@ -5,6 +5,7 @@
 ' e.g. 
 ' root_path/universal_wr_reader
 ' root_path/some well report
+' C:\Proc_TV
 ' be advised that the field of well report is hard coded in this script, shoud be modified if any changes.
 
 Dim RootPath
@@ -294,6 +295,16 @@ Function ProcessWellReport(wb, coverSheetName, byRef fieldMapOut)
             fieldMapOut(k) = ""
         End If
     Next
+    Dim cachePath
+    cachePath = "C:\Proc_TV\magdev_cache.txt"
+
+    fieldMapOut("MAGN") = GetMagDevWithConfirmation(fieldMapOut("MAGN"), fieldMapOut("LOC"), cachePath)
+
+    If fieldMapOut("MAGN") = "" Then
+        MsgBox "MAGN confirmation cancelled."
+        ProcessWellReport = False
+        Exit Function
+    End If
 
     ok = FindLatestTVRecord(wsCover, tableArea, tvInfo)
     If Not ok Then
@@ -415,7 +426,7 @@ Function AskMagDev(defaultMagDev, locName)
 End Function
 
 
-Function GetMagDevWithConfirmation(reportMagDev, cachePath)
+Function GetMagDevWithConfirmation(reportMagDev, locName, cachePath)
     Dim d, key, defaultMagDev, confirmedValue
 
     Set d = LoadMagDevCache(cachePath)
