@@ -419,7 +419,7 @@ Function GetMagDevWithConfirmation(reportMagDev, cachePath)
     Dim d, key, defaultMagDev, confirmedValue
 
     Set d = LoadMagDevCache(cachePath)
-
+    key = NormalizeLookupKey(locName)
     ' priority set to user input
     If d.Exists(key) Then
         defaultMagDev = d(key)
@@ -427,19 +427,25 @@ Function GetMagDevWithConfirmation(reportMagDev, cachePath)
         defaultMagDev = reportMagDev
     End If
 
-    ' confirm with popup window
-    confirmedValue = AskMagDev(defaultMagDev, locName)
+    defaultMagDev = NormalizeMagDevText(defaultMagDev)
 
-    If confirmedValue = "" Then
-        GetMagDevWithConfirmation = ""
-        Exit Function
+' Only force popup when value is zero-like
+    If IsZeroLikeValue(defaultMagDev) Then
+        confirmedValue = AskMagDev("0", locName)
+
+        If confirmedValue = "" Then
+            GetMagDevWithConfirmation = ""
+            Exit Function
+        End If
+
+        d(key) = confirmedValue
+        SaveMagDevCache cachePath, d
+        GetMagDevWithConfirmation = confirmedValue
+    Else
+        d(key) = defaultMagDev
+        SaveMagDevCache cachePath, d
+        GetMagDevWithConfirmation = defaultMagDev
     End If
-
-    ' caching mag dev
-    d(key) = confirmedValue
-    SaveMagDevCache cachePath, d
-
-    GetMagDevWithConfirmation = confirmedValue
 End Function
 
 
