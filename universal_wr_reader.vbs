@@ -235,8 +235,8 @@ Function FindLatestTVRecord(ws, tableArea, byRef tvInfo)
             
             If curType = "ABI" And Not foundABI Then
                     tvInfo("ABI_ROW") = r
-                    tvInfo("ABI_LT") = ws.Cells(r, ltCol).Value
-                    tvInfo("ABI_LB") = ws.Cells(r, lbCol).Value
+                    tvInfo("ABI_LT") = ws.Cells(r, LTPCol).Value
+                    tvInfo("ABI_LB") = ws.Cells(r, LBTCol).Value
                     foundABI = True
             End If
             If foundLatest And foundOBI And foundABI Then Exit For
@@ -322,7 +322,7 @@ Function ProcessWellReport(wb, coverSheetName, byRef fieldMapOut)
     fieldMapOut("LB#1") = DictValueOrDefault(tvInfo, "ABI_LT", "-")
     fieldMapOut("LB#2") = DictValueOrDefault(tvInfo, "ABI_LB", "-")
 
-    
+
 
     ProcessWellReport = True
 
@@ -419,7 +419,7 @@ Function GetMagDevWithConfirmation(reportMagDev, cachePath)
     End If
 
     ' confirm with popup window
-    confirmedValue = AskMagDev(defaultMagDev, wellName, locName)
+    confirmedValue = AskMagDev(defaultMagDev, locName)
 
     If confirmedValue = "" Then
         GetMagDevWithConfirmation = ""
@@ -431,4 +431,21 @@ Function GetMagDevWithConfirmation(reportMagDev, cachePath)
     SaveMagDevCache cachePath, d
 
     GetMagDevWithConfirmation = confirmedValue
+End Function
+
+
+Function DictValueOrDefault(d, k, defaultValue)
+    If IsObject(d) Then
+        If d.Exists(k) Then
+            If Trim(CStr(d(k))) <> "" Then
+                DictValueOrDefault = d(k)
+            Else
+                DictValueOrDefault = defaultValue
+            End If
+        Else
+            DictValueOrDefault = defaultValue
+        End If
+    Else
+        DictValueOrDefault = defaultValue
+    End If
 End Function
