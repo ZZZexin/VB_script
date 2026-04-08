@@ -40,6 +40,7 @@ Set obBHDoc = obWCAD.GetBorehole()
 
 ok = ProcessWellReport(wb, "Cover Sheet", finalMap)
 If Not ok Then
+    WindowsIsCrap ws, wb, xlApp
     WScript.Quit
 End If
 
@@ -65,10 +66,7 @@ Next
 
 '========= test end ================
 
-wb.Close False
-xlApp.Quit
-Set wb = Nothing
-Set xlApp = Nothing  
+WindowsIsCrap ws, wb, xlApp
 
 '==========================
 '|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -381,7 +379,7 @@ End Sub
 
 ' pop up window
 Function AskMagDev(defaultMagDev, locName)
-    Dim s, msg, title
+    Dim s, msg, title, ans
 
     title = "Confirm Magnetic Declination"
     msg = "Please confirm or edit the magnetic declination." & vbCrLf & vbCrLf & _
@@ -389,18 +387,29 @@ Function AskMagDev(defaultMagDev, locName)
           "MAGN value:"
 
     Do
-        s = InputBox(msg, title, CStr(defaultMagDev))
-
+        s = InputBox(msg, title, NormalizeMagDevText(defaultMagDev))
+        ' Cancel or blank = abort
         If Trim(CStr(s)) = "" Then
             AskMagDev = ""
             Exit Function
         End If
 
-        If IsNumeric(s) Then
-            AskMagDev = CStr(CDbl(s))
-            Exit Function
-        Else
+        If Not IsNumeric(s) Then
             MsgBox "Please enter a valid number.", vbExclamation, "Invalid input"
+        Else
+            s = NormalizeMagDevText(s)
+
+            ans = MsgBox( _
+                "Use this MAGN value?" & vbCrLf & vbCrLf & _
+                "Location: " & locName & vbCrLf & _
+                "MAGN: " & s, _
+                vbYesNo + vbQuestion, _
+                title)
+
+            If ans = vbYes Then
+                AskMagDev = s
+                Exit Function
+            End If
         End If
     Loop
 End Function
@@ -447,5 +456,60 @@ Function DictValueOrDefault(d, k, defaultValue)
         End If
     Else
         DictValueOrDefault = defaultValue
+    End If
+End Function
+
+Sub WindowsIsCrap(ByRef ws, ByRef wb, ByRef xlApp)
+    On Error Resume Next
+
+    If Not ws Is Nothing Then
+        Set ws = Nothing
+    End If
+
+    If Not wb Is Nothing Then
+        wb.Close False
+        Set wb = Nothing
+    End If
+
+    If Not xlApp Is Nothing Then
+        xlApp.Quit
+        Set xlApp = Nothing
+    End If
+
+    On Error GoTo 0
+End Sub
+
+
+Function IsZeroLikeValue(v)
+    ' find any suspicous zeros!
+    dim s
+    s = Trim(CSTR(v))
+
+    If s = "" Then
+        IsZeroLikeValue = False
+        Exit Function
+    End If
+
+    If IsNumeric(s) Then
+        IsZeroLikeValue = (CDbl(s) = 0)
+    Else
+        IsZeroLikeValue = False
+    End If
+End Function
+
+Function NormalizeMagDevText(v)
+    Dim s
+    s = Trim(CStr(v))
+
+    If s = "" Then
+        NormalizeMagDevText = ""
+    ElseIf IsNumeric(s) Then
+        If CDbl(s) = 0 Then
+            NormalizeMagDevText = "0"
+        Else
+            NormalizeMagDevText = CStr(CDbl(s))
+        End If
+    Else
+        NormalizeMagDevText = s
     End If
 End Function
