@@ -330,7 +330,12 @@ Function ProcessWellReport(wb, coverSheetName, byRef fieldMapOut)
     fieldMapOut("LOGU") = tvInfo("LOGGINGUNIT")
     fieldMapOut("DATE") = tvInfo("DATE_TEXT")
     fieldMapOut(":") =  "OPTICAL AND ACOUSTIC? IMAGE LOG"
-    fieldMapOut(":#1") = "ORIENTED TO ?"
+    If fieldMapOut("PDIP") <> CStr(CLng(CDbl(-90))) Then
+        fieldMapOut(".") = "ORIENTED TO HIGH SIDE?"
+    ElseIf fieldMapOut("PDIP") = CStr(CLng(CDbl(-90))) Then
+        fieldMapOut(".") = "ORIENTED TO MAGNETIC NORTH?"
+    End If 
+    
     ' TV-specific
     fieldMapOut("Log Top") = DictValueOrDefault(tvInfo, "Log Top", "-")
     fieldMapOut("Log Bottom") = DictValueOrDefault(tvInfo, "Log Bottom", "-")
